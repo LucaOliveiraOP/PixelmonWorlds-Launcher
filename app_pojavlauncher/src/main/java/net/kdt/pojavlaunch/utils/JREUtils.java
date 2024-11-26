@@ -274,7 +274,7 @@ public class JREUtils {
     }
 
     public static void launchJavaVM(final AppCompatActivity activity, final Runtime runtime, File gameDirectory, final List<String> JVMArgs, final String userArgsString) throws Throwable {
-        String runtimeHome = MultiRTUtils.getRuntimeHome(runtime.name).getAbsolutePath();
+        String runtimeHome = MultiRTUtils.getRuntimeHome(runtime.name);
 
         JREUtils.relocateLibPath(runtime, runtimeHome);
 
@@ -312,7 +312,7 @@ public class JREUtils {
         Logger.appendToLog("Java Exit code: " + exitCode);
         if (exitCode != 0) {
             LifecycleAwareAlertDialog.DialogCreator dialogCreator = (dialog, builder)->
-                    builder.setMessage(activity.getString(R.string.mcn_exit_title, exitCode))
+                    builder.setMessage(activity.getString(R.string.mcn_exit_title))
                     .setPositiveButton(R.string.main_share_logs, (dialogInterface, which)-> shareLog(activity));
 
             LifecycleAwareAlertDialog.haltOnDialog(activity.getLifecycle(), activity, dialogCreator);

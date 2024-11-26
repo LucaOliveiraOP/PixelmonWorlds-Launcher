@@ -1,15 +1,30 @@
 package net.kdt.pojavlaunch;
 
+import java.io.File;
+import java.io.IOException;
+import java.lang.ref.WeakReference;
+
+
 import android.Manifest;
+import android.content.SharedPreferences;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.Toast;
-
+import android.widget.ExpandableListView;
+import net.kdt.pojavlaunch.modloaders.modpacks.api.CurseforgeApi;
+import net.kdt.pojavlaunch.modloaders.modpacks.models.SearchFilters;
+import net.kdt.pojavlaunch.modloaders.modpacks.models.SearchResult;
+import net.kdt.pojavlaunch.modloaders.modpacks.models.ModItem;
+import net.kdt.pojavlaunch.modloaders.modpacks.models.ModDetail;
+import net.kdt.pojavlaunch.modloaders.modpacks.api.ModLoader;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -22,7 +37,7 @@ import androidx.fragment.app.FragmentManager;
 
 import com.kdt.mcgui.ProgressLayout;
 import com.kdt.mcgui.mcAccountSpinner;
-
+import net.kdt.pojavlaunch.fragments.ForgeInstallFragment;
 import net.kdt.pojavlaunch.contracts.OpenDocumentWithExtension;
 import net.kdt.pojavlaunch.extra.ExtraConstants;
 import net.kdt.pojavlaunch.extra.ExtraCore;
@@ -32,6 +47,8 @@ import net.kdt.pojavlaunch.fragments.MicrosoftLoginFragment;
 import net.kdt.pojavlaunch.fragments.SelectAuthFragment;
 import net.kdt.pojavlaunch.lifecycle.ContextAwareDoneListener;
 import net.kdt.pojavlaunch.lifecycle.ContextExecutor;
+import net.kdt.pojavlaunch.modloaders.ModloaderListenerProxy;
+import net.kdt.pojavlaunch.modloaders.ModloaderDownloadListener;
 import net.kdt.pojavlaunch.modloaders.modpacks.ModloaderInstallTracker;
 import net.kdt.pojavlaunch.modloaders.modpacks.imagecache.IconCacheJanitor;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
@@ -41,11 +58,14 @@ import net.kdt.pojavlaunch.progresskeeper.TaskCountListener;
 import net.kdt.pojavlaunch.services.ProgressServiceKeeper;
 import net.kdt.pojavlaunch.tasks.AsyncMinecraftDownloader;
 import net.kdt.pojavlaunch.tasks.AsyncVersionList;
+import net.kdt.pojavlaunch.modloaders.ForgeDownloadTask;
+import net.kdt.pojavlaunch.modloaders.ForgeUtils;
 import net.kdt.pojavlaunch.tasks.MinecraftDownloader;
 import net.kdt.pojavlaunch.utils.NotificationUtils;
 import net.kdt.pojavlaunch.value.launcherprofiles.LauncherProfiles;
 import net.kdt.pojavlaunch.value.launcherprofiles.MinecraftProfile;
 
+import java.io.File;
 import java.lang.ref.WeakReference;
 
 public class LauncherActivity extends BaseActivity {
@@ -129,6 +149,45 @@ public class LauncherActivity extends BaseActivity {
             ExtraCore.setValue(ExtraConstants.SELECT_AUTH_METHOD, true);
             return false;
         }
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        boolean isFirstStart = prefs.getBoolean("isFirstStart", true);
+        boolean isModInstalled = prefs.getBoolean("isModInstalled", false);
+        if (isFirstStart) {
+            Toast.makeText(this, "Launcher desatualizado", Toast.LENGTH_LONG).show();
+            performActionWithVersion("1.16.5-36.2.42");
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putBoolean("isFirstStart", false);
+            editor.apply();
+            return false;
+        }
+        if (isModInstalled) {
+            Toast.makeText(this, "Mod desatualizado", Toast.LENGTH_LONG).show();
+            CurseforgeApi curseforgeApi = new CurseforgeApi("Pixelmon 1.16.5-9.1.12-pipe24759");
+
+// Search for the modpack
+            SearchFilters searchFilters = new SearchFilters();
+            searchFilters.name = "desired-modpack-name";
+            searchFilters.isModpack = true;
+            SearchResult searchResult = curseforgeApi.searchMod(searchFilters, null);
+
+// Get the details of the first modpack in the search results
+            ModItem modItem = searchResult.results[0];
+            ModDetail modDetail = curseforgeApi.getModDetails(modItem);
+
+// Install the modpack
+            int selectedVersion = 0; // Select the desired version index
+            try {
+                ModLoader modLoader = curseforgeApi.installMod(modDetail, selectedVersion);
+            } catch (IOException e) {
+                e.printStackTrace();
+                Toast.makeText(this, "Failed to install modpack", Toast.LENGTH_LONG).show();
+                return false;
+            }
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putBoolean("isModInstalled", true);
+            editor.apply();
+            return false;
+        }
         String normalizedVersionId = AsyncMinecraftDownloader.normalizeVersionId(prof.lastVersionId);
         JMinecraftVersionList.Version mcVersion = AsyncMinecraftDownloader.getListedVersion(normalizedVersionId);
         new MinecraftDownloader().start(
@@ -152,32 +211,130 @@ public class LauncherActivity extends BaseActivity {
 
     private ActivityResultLauncher<String> mRequestNotificationPermissionLauncher;
     private WeakReference<Runnable> mRequestNotificationPermissionRunnable;
+    private void installModpack() {
+        new InstallModpackTask().execute("desired-modpack-name");
+    }
+    private class InstallModpackTask extends AsyncTask<String, Void, Boolean> {
+        @Override
+        protected Boolean doInBackground(String... params) {
+            String modpackName = params[0];
+            try {
+                CurseforgeApi curseforgeApi = new CurseforgeApi("your-api-key");
 
+                // Search for the modpack
+                SearchFilters searchFilters = new SearchFilters();
+                searchFilters.name = modpackName;
+                searchFilters.isModpack = true;
+                SearchResult searchResult = curseforgeApi.searchMod(searchFilters, null);
+
+                // Get the details of the first modpack in the search results
+                ModItem modItem = searchResult.results[0];
+                ModDetail modDetail = curseforgeApi.getModDetails(modItem);
+
+                // Install the modpack
+                int selectedVersion = 0; // Select the desired version index
+                ModLoader modLoader = curseforgeApi.installMod(modDetail, selectedVersion);
+
+                return true;
+            } catch (IOException e) {
+                e.printStackTrace();
+                return false;
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Boolean success) {
+            if (success) {
+                Toast.makeText(LauncherActivity.this, "Modpack installed successfully", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(LauncherActivity.this, "Failed to install modpack", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+    public void performActionWithVersion(String forgeVersion) {
+        Log.d("LauncherActivity", "Selected Forge Version: " + forgeVersion);
+        //File forgeVersionFile = new File(getFilesDir(), "forge_" + forgeVersion + ".installed");
+        //if (forgeVersionFile.exists()) {
+        //    return;
+        //}
+        ModloaderListenerProxy taskProxy = new ModloaderListenerProxy();
+        Runnable downloadTask = createDownloadTask(forgeVersion, taskProxy);
+        setTaskProxy(taskProxy);
+        taskProxy.attachListener(new ModloaderDownloadListener() {
+            public void onDownloadFinished(File downloadedFile) {
+                Tools.runOnUiThread(() -> {
+                    Context context = LauncherActivity.this;
+                    taskProxy.detachListener();
+                    setTaskProxy(null);
+                    // Handle the downloaded file
+                    Intent modInstallerStartIntent = new Intent(context, JavaGUILauncherActivity.class);
+                    ForgeUtils.addAutoInstallArgs(modInstallerStartIntent, downloadedFile, true);
+                    context.startActivity(modInstallerStartIntent);
+                });
+            }
+
+            public void onDataNotAvailable() {
+                Tools.runOnUiThread(() -> {
+                    Context context = LauncherActivity.this;
+                    taskProxy.detachListener();
+                    setTaskProxy(null);
+                    Tools.dialog(context, context.getString(R.string.global_error), context.getString(R.string.forge_dl_no_installer));
+                });
+            }
+
+            public void onDownloadError(Exception e) {
+                Tools.runOnUiThread(() -> {
+                    Context context = LauncherActivity.this;
+                    taskProxy.detachListener();
+                    setTaskProxy(null);
+                    Tools.showError(context, e);
+                });
+            }
+        });
+        new Thread(downloadTask).start();
+    }
+
+    private Runnable createDownloadTask(String selectedVersion, ModloaderListenerProxy listenerProxy) {
+        return new ForgeDownloadTask(listenerProxy, selectedVersion);
+    }
+
+    private void setTaskProxy(ModloaderListenerProxy proxy) {
+        // Implementation to set the task proxy
+    }
+    private void onDownloadVersionListComplete() {
+        // Your code here
+        Log.d("LauncherActivity", "Download version list complete");
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_pojav_launcher);
         FragmentManager fragmentManager = getSupportFragmentManager();
         // If we don't have a back stack root yet...
-        if(fragmentManager.getBackStackEntryCount() < 1) {
+        if (fragmentManager.getBackStackEntryCount() < 1) {
             // Manually add the first fragment to the backstack to get easily back to it
-            // There must be a better way to handle the root though...
-            // (artDev: No, there is not. I've spent days researching this for another unrelated project.)
             fragmentManager.beginTransaction()
                     .setReorderingAllowed(true)
                     .addToBackStack("ROOT")
                     .add(R.id.container_fragment, MainMenuFragment.class, null, "ROOT").commit();
         }
 
+        // Add ForgeInstallFragment to the FragmentManager
+        /*fragmentManager.beginTransaction()
+                .replace(R.id.container_fragment, new ForgeInstallFragment(), "FORGE_INSTALL_FRAGMENT")
+                .commit();*/
+
+        //Call the function that has the contents of onChildClick but without UI logic
+
 
         IconCacheJanitor.runJanitor();
         mRequestNotificationPermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
                 isAllowed -> {
-                    if(!isAllowed) handleNoNotificationPermission();
+                    if (!isAllowed) handleNoNotificationPermission();
                     else {
                         Runnable runnable = Tools.getWeakReference(mRequestNotificationPermissionRunnable);
-                        if(runnable != null) runnable.run();
+                        if (runnable != null) runnable.run();
                     }
                 }
         );
@@ -205,6 +362,24 @@ public class LauncherActivity extends BaseActivity {
         mProgressLayout.observe(ProgressLayout.INSTALL_MODPACK);
         mProgressLayout.observe(ProgressLayout.AUTHENTICATE_MICROSOFT);
         mProgressLayout.observe(ProgressLayout.DOWNLOAD_VERSION_LIST);
+        //performActionWithVersion("1.16.5-36.2.42");
+        //SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        //performActionWithVersion("1.16.5-36.2.42");
+        //mProgressLayout.observe(ProgressLayout.DOWNLOAD_VERSION_LIST, new ProgressLayout.OnCompleteListener() {
+            //@Override
+            //public void onComplete() {
+           //     onDownloadVersionListComplete();
+           // }
+       // });
+        //boolean isFirstStart = prefs.getBoolean("isFirstStart", true);
+
+        //if (isFirstStart) {
+           // performActionWithVersion("1.16.5-36.2.42");
+
+           // SharedPreferences.Editor editor = prefs.edit();
+           // editor.putBoolean("isFirstStart", false);
+           // editor.apply();
+        //}
     }
 
     @Override
@@ -230,6 +405,9 @@ public class LauncherActivity extends BaseActivity {
     protected void onStart() {
         super.onStart();
         getSupportFragmentManager().registerFragmentLifecycleCallbacks(mFragmentCallbackListener, true);
+
+
+
     }
 
     @Override
@@ -289,7 +467,7 @@ public class LauncherActivity extends BaseActivity {
 
     private void checkNotificationPermission() {
         if(LauncherPreferences.PREF_SKIP_NOTIFICATION_PERMISSION_CHECK ||
-            checkForNotificationPermission()) {
+                checkForNotificationPermission()) {
             return;
         }
 

@@ -66,6 +66,9 @@ public class Architecture {
 	 * @return The architecture as an int, can be UNSUPPORTED_ARCH if unknown.
 	 */
 	public static int archAsInt(String arch){
+		if (arch == null) {
+			throw new IllegalArgumentException("Architecture string cannot be null");
+		}
 		arch = arch.toLowerCase().trim().replace(" ", "");
 		if(arch.contains("arm64") || arch.equals("aarch64")) return ARCH_ARM64;
 		if(arch.contains("arm") || arch.equals("aarch32")) return ARCH_ARM;

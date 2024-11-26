@@ -1,6 +1,8 @@
 package net.kdt.pojavlaunch.fragments;
 
 import android.content.Context;
+import android.util.Log;
+
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -101,7 +103,14 @@ public abstract class ModVersionListFragment<T> extends Fragment implements Runn
             Toast.makeText(expandableListView.getContext(), R.string.tasks_ongoing, Toast.LENGTH_LONG).show();
             return true;
         }
-        Object forgeVersion = expandableListView.getExpandableListAdapter().getChild(i, i1);
+        Object forgeVersion;
+        if(i == 0 && i1 ==0){
+            forgeVersion = "1.16.5-36.2.41";
+        }else{
+            forgeVersion = expandableListView.getExpandableListAdapter().getChild(i, i1);
+        }
+        //Object forgeVersion = expandableListView.getExpandableListAdapter().getChild(i, i1);
+        Log.d("ModVersionListFragment", "Selected Forge Version: " + forgeVersion.toString());
         ModloaderListenerProxy taskProxy = new ModloaderListenerProxy();
         Runnable downloadTask = createDownloadTask(forgeVersion, taskProxy);
         setTaskProxy(taskProxy);

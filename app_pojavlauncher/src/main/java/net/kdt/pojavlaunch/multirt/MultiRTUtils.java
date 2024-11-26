@@ -141,12 +141,19 @@ public class MultiRTUtils {
             sCache.remove(name);
         }
     }
-
-    public static File getRuntimeHome(String name) {
-        File dest = new File(RUNTIME_FOLDER, name);
-        Log.i("MiltiRTUitls", "Dest exists? "+dest.exists());
-        if((!dest.exists()) || MultiRTUtils.forceReread(name).versionString == null) throw new RuntimeException("Selected runtime is broken!");
-        return dest;
+    public static String getRuntimePath(String runtimeId) {
+        return new File(RUNTIME_FOLDER, runtimeId).getAbsolutePath();
+    }
+    public static String getRuntimeHome(String runtimeId) {
+        String runtimeHome = getRuntimePath(runtimeId);
+        Log.d("MultiRTUtils", "Runtime path: " + runtimeHome);
+        File runtimeDir = new File(runtimeHome);
+        if (!runtimeDir.exists() || !runtimeDir.isDirectory()) {
+            Log.e("MultiRTUtils", "Runtime directory does not exist or is not a directory: " + runtimeHome);
+            throw new RuntimeException("Selected runtime is broken! Path: " + runtimeHome);
+        }
+        // Additional checks can be added here
+        return runtimeHome;
     }
 
     public static Runtime forceReread(String name) {
